@@ -7,7 +7,7 @@ down?**
 BBC Weather (like every forecast site) only ever shows you its *current*
 prediction — there's no way to see how a forecast for a given day changed over
 the two weeks leading up to it. This project closes that gap by polling BBC's
-forecast every 3 hours, keeping every distinct revision it makes for each
+forecast every hour, keeping every distinct revision it makes for each
 calendar date, and then checking the outcome against the real observed
 temperature once the date has passed.
 
@@ -17,12 +17,16 @@ Live dashboard: **https://weather-drift-tracker.m-p-england.workers.dev**
 
 A single Cloudflare Worker does everything, on two schedules:
 
-- **Every 3 hours** — fetches BBC's forecast for
+- **Every hour** — fetches BBC's forecast for
   [Evercreech](https://www.bbc.co.uk/weather/2649842) (an undocumented but
   public JSON endpoint, not an official API) and stores a new snapshot for
   each date *only if* the prediction actually changed since the last
   snapshot for that date (issue date, predicted high, or predicted low).
   This means the data is a record of real revisions, not just repeated polls.
+  Hourly was chosen after observing BBC re-issue this forecast at intervals
+  as short as ~30 minutes during the day (and BBC's own "Observations" panel
+  updates on the hour too) — a slower cadence risked silently missing
+  revisions.
 - **Once a day** — for any date that's now in the past, fetches the real
   observed high/low from [Open-Meteo](https://open-meteo.com) (a free,
   no-key weather API) and stores it as ground truth.
@@ -48,7 +52,7 @@ no framework) renders three views:
 ```
 src/
   bbc.ts        fetch + parse the BBC forecast endpoint
-  poller.ts     3-hourly cron: dedupe + store new revisions
+  poller.ts     hourly cron: dedupe + store new revisions
   actuals.ts    daily cron: backfill real observed temps from Open-Meteo
   api.ts        GET /api/data
   index.ts      Worker entry point (fetch + scheduled handlers)
@@ -87,7 +91,7 @@ npm run typecheck
 Trigger a cron handler manually against the local dev server:
 
 ```bash
-curl "http://localhost:8787/__scheduled?cron=0+*/3+*+*+*"   # forecast poll
+curl "http://localhost:8787/__scheduled?cron=0+*+*+*+*"     # forecast poll
 curl "http://localhost:8787/__scheduled?cron=0+6+*+*+*"     # actuals backfill
 ```
 

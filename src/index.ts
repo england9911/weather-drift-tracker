@@ -3,7 +3,7 @@ import { runActualsBackfill } from "./actuals";
 import { runForecastPoll } from "./poller";
 import type { Env } from "./types";
 
-const FORECAST_POLL_CRON = "0 */3 * * *";
+const FORECAST_POLL_CRON = "0 * * * *";
 const ACTUALS_BACKFILL_CRON = "0 6 * * *";
 
 export default {
