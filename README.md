@@ -29,8 +29,14 @@ A single Cloudflare Worker does everything, on two schedules:
 
 Everything lands in a Cloudflare D1 (SQLite) database. A small `/api/data`
 endpoint serves the joined data, and a static dashboard (vanilla HTML/SVG/JS,
-no framework) renders two views:
+no framework) renders three views:
 
+- **Next 14 days: current forecast vs. first forecast** — every currently
+  upcoming date in one chart: today's forecast (solid) against what BBC
+  predicted for that same date the very first time it appeared (dashed),
+  with the gap between them shaded. This is the "at a glance" view — you
+  can see the whole outlook and how much each day has already drifted in
+  one look, without picking a date first.
 - **Revision history for a date** — every snapshot BBC gave for a chosen
   date, in order, so you can see it change (or not) as the date approached.
 - **Warm bias by lead time** — averaged across every date with a known

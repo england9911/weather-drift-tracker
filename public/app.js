@@ -89,6 +89,19 @@ function addRing(svg, x, y, color, r) {
   return ring;
 }
 
+function addRingMarker(svg, x, y, color, r) {
+  const surface = cssVar("--surface-1");
+  const ring = document.createElementNS(SVG_NS, "circle");
+  ring.setAttribute("cx", x);
+  ring.setAttribute("cy", y);
+  ring.setAttribute("r", r);
+  ring.setAttribute("fill", surface);
+  ring.setAttribute("stroke", color);
+  ring.setAttribute("stroke-width", 2.5);
+  svg.appendChild(ring);
+  return ring;
+}
+
 function getTooltipEl(container) {
   let el = container.querySelector(".tooltip");
   if (!el) {
@@ -256,6 +269,201 @@ function createLineChart(mountEl, opts) {
 
   mountEl.querySelectorAll("svg").forEach((old) => old.remove());
   mountEl.insertBefore(svg, mountEl.firstChild);
+}
+
+function computeOutlookRows(dates) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  return dates
+    .filter((d) => d.targetDate >= todayIso && d.snapshots.length > 0)
+    .sort((a, b) => (a.targetDate < b.targetDate ? -1 : 1))
+    .map((d) => {
+      const first = d.snapshots[0];
+      const current = d.snapshots[d.snapshots.length - 1];
+      return {
+        targetDate: d.targetDate,
+        firstHigh: first.maxTempC,
+        firstLow: first.minTempC,
+        currentHigh: current.maxTempC,
+        currentLow: current.minTempC,
+      };
+    });
+}
+
+function renderOutlookChart(dates) {
+  const wrap = document.getElementById("outlook-chart-wrap");
+  const tableWrap = document.getElementById("outlook-table-wrap");
+  const rows = computeOutlookRows(dates);
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="card-sub">No upcoming dates tracked yet.</p>';
+    tableWrap.innerHTML = "";
+    return;
+  }
+
+  const highColor = cssVar("--series-high");
+  const lowColor = cssVar("--series-low");
+  const highWash = cssVar("--series-high-wash");
+  const lowWash = cssVar("--series-low-wash");
+
+  const width = 860;
+  const height = 320;
+  const margin = { top: 16, right: 16, bottom: 32, left: 46 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const n = rows.length;
+  const xPos = (i) => margin.left + (n === 1 ? plotW / 2 : (plotW * i) / (n - 1));
+
+  const allY = rows.flatMap((r) => [r.firstHigh, r.currentHigh, r.firstLow, r.currentLow]);
+  const yMinRaw = Math.min(...allY);
+  const yMaxRaw = Math.max(...allY);
+  const yPad = (yMaxRaw - yMinRaw) * 0.2 || 1;
+  const yMin = yMinRaw - yPad;
+  const yMax = yMaxRaw + yPad;
+  const yScale = (y) => margin.top + plotH - ((y - yMin) / (yMax - yMin)) * plotH;
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("class", "chart");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Next 14 days: current forecast versus first forecast");
+
+  for (const t of niceTicks(yMin, yMax, 4)) {
+    const gy = yScale(t);
+    addLine(svg, margin.left, gy, width - margin.right, gy, "gridline");
+    addText(svg, margin.left - 8, gy + 3, formatTemp(t), "end");
+  }
+  addLine(svg, margin.left, margin.top + plotH, width - margin.right, margin.top + plotH, "axis-line");
+  rows.forEach((r, i) => addText(svg, xPos(i), margin.top + plotH + 18, formatDayMonth(r.targetDate), "middle"));
+
+  function bandPath(getFirst, getCurrent) {
+    const forward = rows.map((r, i) => `${i === 0 ? "M" : "L"}${xPos(i)},${yScale(getCurrent(r))}`).join(" ");
+    const backward = rows
+      .map((r, i) => ({ r, i }))
+      .reverse()
+      .map(({ r, i }) => `L${xPos(i)},${yScale(getFirst(r))}`)
+      .join(" ");
+    return `${forward} ${backward} Z`;
+  }
+
+  function addBand(getFirst, getCurrent, wash) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", bandPath(getFirst, getCurrent));
+    path.setAttribute("fill", wash);
+    path.setAttribute("stroke", "none");
+    svg.appendChild(path);
+  }
+
+  addBand((r) => r.firstHigh, (r) => r.currentHigh, highWash);
+  addBand((r) => r.firstLow, (r) => r.currentLow, lowWash);
+
+  function addSeriesLine(getValue, color, dashed) {
+    const d = rows.map((r, i) => `${i === 0 ? "M" : "L"}${xPos(i)},${yScale(getValue(r))}`).join(" ");
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linejoin", "round");
+    path.setAttribute("stroke-linecap", "round");
+    if (dashed) path.setAttribute("stroke-dasharray", "5,4");
+    svg.appendChild(path);
+  }
+
+  addSeriesLine((r) => r.firstHigh, highColor, true);
+  addSeriesLine((r) => r.firstLow, lowColor, true);
+  addSeriesLine((r) => r.currentHigh, highColor, false);
+  addSeriesLine((r) => r.currentLow, lowColor, false);
+
+  rows.forEach((r, i) => {
+    addRingMarker(svg, xPos(i), yScale(r.firstHigh), highColor, 4);
+    addRingMarker(svg, xPos(i), yScale(r.firstLow), lowColor, 4);
+  });
+  rows.forEach((r, i) => {
+    addDot(svg, xPos(i), yScale(r.currentHigh), highColor, 4);
+    addDot(svg, xPos(i), yScale(r.currentLow), lowColor, 4);
+  });
+
+  const tooltipEl = getTooltipEl(wrap);
+
+  const crosshair = document.createElementNS(SVG_NS, "line");
+  crosshair.setAttribute("class", "crosshair");
+  crosshair.setAttribute("y1", margin.top);
+  crosshair.setAttribute("y2", margin.top + plotH);
+  svg.appendChild(crosshair);
+
+  const hit = document.createElementNS(SVG_NS, "rect");
+  hit.setAttribute("x", margin.left);
+  hit.setAttribute("y", margin.top);
+  hit.setAttribute("width", plotW);
+  hit.setAttribute("height", plotH);
+  hit.setAttribute("class", "hit-layer");
+  svg.appendChild(hit);
+
+  function nearestIndex(clientX) {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = 0;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    let best = 0;
+    let bestDist = Infinity;
+    rows.forEach((r, i) => {
+      const dist = Math.abs(xPos(i) - loc.x);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  hit.addEventListener("pointermove", (e) => {
+    const idx = nearestIndex(e.clientX);
+    const r = rows[idx];
+    crosshair.setAttribute("x1", xPos(idx));
+    crosshair.setAttribute("x2", xPos(idx));
+    crosshair.style.opacity = 1;
+    const tooltipRows = [
+      { color: highColor, label: "Current high", value: r.currentHigh },
+      { color: highColor, label: "First-seen high", value: r.firstHigh },
+      { color: lowColor, label: "Current low", value: r.currentLow },
+      { color: lowColor, label: "First-seen low", value: r.firstLow },
+    ];
+    showTooltip(tooltipEl, wrap, e.clientX, e.clientY, formatDayMonth(r.targetDate), tooltipRows, formatTemp);
+  });
+  hit.addEventListener("pointerleave", () => {
+    crosshair.style.opacity = 0;
+    hideTooltip(tooltipEl);
+  });
+
+  wrap.querySelectorAll("svg").forEach((old) => old.remove());
+  wrap.insertBefore(svg, wrap.firstChild);
+
+  const table = document.createElement("table");
+  table.className = "data-table";
+  const thead = document.createElement("thead");
+  thead.innerHTML =
+    "<tr><th>Date</th><th>First high</th><th>Current high</th><th>&Delta; high</th><th>First low</th><th>Current low</th><th>&Delta; low</th></tr>";
+  const tbody = document.createElement("tbody");
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    const cells = [
+      formatDayMonth(r.targetDate),
+      formatTemp(r.firstHigh),
+      formatTemp(r.currentHigh),
+      formatSignedTemp(r.currentHigh - r.firstHigh),
+      formatTemp(r.firstLow),
+      formatTemp(r.currentLow),
+      formatSignedTemp(r.currentLow - r.firstLow),
+    ];
+    for (const c of cells) {
+      const td = document.createElement("td");
+      td.textContent = c;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.append(thead, tbody);
+  tableWrap.innerHTML = "";
+  tableWrap.appendChild(table);
 }
 
 function computeBiasBuckets(dates) {
@@ -488,6 +696,7 @@ async function main() {
     return;
   }
 
+  renderOutlookChart(json.dates);
   renderStatTiles(json.dates);
   renderBiasChart(json.dates);
   populateDateSelect(json.dates);

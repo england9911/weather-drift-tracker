@@ -141,6 +141,7 @@
   .legend-item { display: flex; align-items: center; gap: 6px; }
   .legend-swatch { width: 14px; height: 2px; border-radius: 1px; }
   .legend-swatch.ring { width: 10px; height: 10px; border-radius: 50%; background: none; border: 2px solid; }
+  .legend-swatch.dashed { width: 14px; height: 0; background: none; border-top: 2px dashed; border-radius: 0; }
 
   .chart-wrap { position: relative; }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
@@ -209,6 +210,26 @@
   </div>
 
   <div id="content">
+    <section class="card">
+      <div class="card-header">
+        <h2>Next 14 days: current forecast vs. first forecast</h2>
+        <button class="table-toggle" data-target="outlook">Table view</button>
+      </div>
+      <p class="card-sub">
+        Solid lines are today's forecast for every upcoming date. Dashed lines are what BBC predicted
+        for that same date the very first time it appeared &mdash; the shaded band is how far it's
+        moved since.
+      </p>
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:var(--series-high)"></span>Current high</span>
+        <span class="legend-item"><span class="legend-swatch dashed" style="border-color:var(--series-high)"></span>First-seen high</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:var(--series-low)"></span>Current low</span>
+        <span class="legend-item"><span class="legend-swatch dashed" style="border-color:var(--series-low)"></span>First-seen low</span>
+      </div>
+      <div class="chart-wrap" id="outlook-chart-wrap"></div>
+      <div class="hidden" id="outlook-table-wrap"></div>
+    </section>
+
     <section class="stat-row" id="stat-row" aria-label="Headline bias summary"></section>
 
     <section class="card">
