@@ -1,0 +1,16 @@
+{
+  "name": "weather-drift-tracker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "wrangler": "^4.111.0"
+  }
+}

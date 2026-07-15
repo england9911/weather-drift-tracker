@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "weather-drift-tracker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-15",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "weather-drift-tracker-db",
+      "database_id": "f99cf883-80ba-407d-b9e4-5332adf53e14",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "0 */3 * * *",
+      "0 6 * * *"
+    ]
+  },
+  "vars": {
+    "VILLAGE_LOCATION_ID": "2649842",
+    "VILLAGE_LATITUDE": "51.148",
+    "VILLAGE_LONGITUDE": "-2.502",
+    "ALERT_EMAIL_TO": "m.p.england@gmail.com"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,91 @@
+# Evercreech Forecast Drift Tracker
+
+A small personal project to answer one question: **does BBC Weather quietly
+revise its forecast temperatures upward as the date gets closer, and rarely
+down?**
+
+BBC Weather (like every forecast site) only ever shows you its *current*
+prediction — there's no way to see how a forecast for a given day changed over
+the two weeks leading up to it. This project closes that gap by polling BBC's
+forecast every 3 hours, keeping every distinct revision it makes for each
+calendar date, and then checking the outcome against the real observed
+temperature once the date has passed.
+
+Live dashboard: **https://weather-drift-tracker.m-p-england.workers.dev**
+
+## How it works
+
+A single Cloudflare Worker does everything, on two schedules:
+
+- **Every 3 hours** — fetches BBC's forecast for
+  [Evercreech](https://www.bbc.co.uk/weather/2649842) (an undocumented but
+  public JSON endpoint, not an official API) and stores a new snapshot for
+  each date *only if* the prediction actually changed since the last
+  snapshot for that date (issue date, predicted high, or predicted low).
+  This means the data is a record of real revisions, not just repeated polls.
+- **Once a day** — for any date that's now in the past, fetches the real
+  observed high/low from [Open-Meteo](https://open-meteo.com) (a free,
+  no-key weather API) and stores it as ground truth.
+
+Everything lands in a Cloudflare D1 (SQLite) database. A small `/api/data`
+endpoint serves the joined data, and a static dashboard (vanilla HTML/SVG/JS,
+no framework) renders two views:
+
+- **Revision history for a date** — every snapshot BBC gave for a chosen
+  date, in order, so you can see it change (or not) as the date approached.
+- **Warm bias by lead time** — averaged across every date with a known
+  actual, `predicted − actual` at each lead time (6 days out, 5 days out,
+  ... day of). This is the chart that actually tests the hypothesis.
+
+## Project layout
+
+```
+src/
+  bbc.ts        fetch + parse the BBC forecast endpoint
+  poller.ts     3-hourly cron: dedupe + store new revisions
+  actuals.ts    daily cron: backfill real observed temps from Open-Meteo
+  api.ts        GET /api/data
+  index.ts      Worker entry point (fetch + scheduled handlers)
+public/
+  index.html    dashboard markup + styles
+  app.js        chart rendering (hand-rolled SVG, no charting library)
+migrations/
+  0001_init.sql D1 schema
+```
+
+## Data notes
+
+- BBC's forecast endpoint is unofficial and undocumented — it could change
+  or disappear at any time. There's no SLA.
+- "BBC's actual for the day" in the dashboard means BBC's own last forecast
+  snapshot before the date passed (still a forecast, just their final one) —
+  BBC doesn't publish a true retrospective daily high/low. The one genuinely
+  independent ground truth is the Open-Meteo observed value.
+- It takes a couple of weeks of the poller running before the "warm bias by
+  lead time" chart has enough data to say anything meaningful — there's no
+  shortcut to accumulating history.
+
+## Local development
+
+```bash
+npm install
+npm run dev        # wrangler dev --test-scheduled, http://localhost:8787
+npm run typecheck
+```
+
+Trigger a cron handler manually against the local dev server:
+
+```bash
+curl "http://localhost:8787/__scheduled?cron=0+*/3+*+*+*"   # forecast poll
+curl "http://localhost:8787/__scheduled?cron=0+6+*+*+*"     # actuals backfill
+```
+
+## Deploy
+
+```bash
+npm run deploy
+```
+
+Requires a Cloudflare account with a D1 database created (see
+`wrangler.jsonc` for the binding) and migrations applied with
+`wrangler d1 migrations apply weather-drift-tracker-db --remote`.
