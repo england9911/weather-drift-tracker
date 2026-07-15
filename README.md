@@ -64,6 +64,11 @@ migrations/
 - It takes a couple of weeks of the poller running before the "warm bias by
   lead time" chart has enough data to say anything meaningful — there's no
   shortcut to accumulating history.
+- **Retention: indefinite.** Nothing ever deletes or expires rows — the goal
+  is at least a year of history to see whether the bias holds up across
+  seasons. At this poll rate (dedup'd revisions only) that's a few thousand
+  rows a year, well within D1's free tier, so there's no pruning job and no
+  plan to add one.
 
 ## Local development
 
