@@ -33,16 +33,25 @@ A single Cloudflare Worker does everything, on two schedules:
 
 Everything lands in a Cloudflare D1 (SQLite) database. A small `/api/data`
 endpoint serves the joined data, and a static dashboard (vanilla HTML/SVG/JS,
-no framework) renders three views:
+no framework) renders four views:
 
-- **Next 14 days: current forecast vs. first forecast** — every currently
-  upcoming date in one chart: today's forecast (solid) against what BBC
-  predicted for that same date the very first time it appeared (dashed),
-  with the gap between them shaded. This is the "at a glance" view — you
-  can see the whole outlook and how much each day has already drifted in
-  one look, without picking a date first.
+- **Next 14 days: current, first-seen & most extreme forecast** — every
+  currently upcoming date in one chart, three reference points per
+  temperature series: today's forecast (solid), the first-ever prediction
+  for that date (dashed), and the single most extreme prediction BBC has
+  *ever* given for it — hottest high, coldest low, regardless of when
+  (dotted). The shaded band spans from that extreme down to today's
+  forecast, so the tallest bands are the dates with the biggest swings.
+  This is a **summary** view — three sampled points, not the full story.
+- **Shape of each day's revisions** — a compact table, one row per upcoming
+  date, each with a small sparkline of *every* snapshot recorded for that
+  date. This exists because the summary chart above can't distinguish a
+  steady creep from a dip-then-recovery — both can share the same
+  first/extreme/current numbers but look completely different as a shape.
+  Click a row to jump straight to that date in the chart below.
 - **Revision history for a date** — every snapshot BBC gave for a chosen
   date, in order, so you can see it change (or not) as the date approached.
+  This is the full-detail view behind both of the above.
 - **Warm bias by lead time** — averaged across every date with a known
   actual, `predicted − actual` at each lead time (6 days out, 5 days out,
   ... day of). This is the chart that actually tests the hypothesis.
@@ -79,6 +88,9 @@ migrations/
   seasons. At this poll rate (dedup'd revisions only) that's a few thousand
   rows a year, well within D1's free tier, so there's no pruning job and no
   plan to add one.
+- **Mobile**: all tables scroll horizontally inside their own container
+  (never the page), and chart tooltips respond to tap (`pointerdown`) as
+  well as hover, with a tap outside a chart dismissing its tooltip.
 
 ## Local development
 

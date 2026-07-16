@@ -19,6 +19,7 @@
     --series-high-wash: rgba(235,104,52,0.10);
     --series-low:     #2a78d6;
     --series-low-wash: rgba(42,120,214,0.10);
+    --row-hover:      rgba(11,11,11,0.04);
   }
   @media (prefers-color-scheme: dark) {
     .viz-root {
@@ -35,6 +36,7 @@
       --series-high-wash: rgba(217,89,38,0.14);
       --series-low:     #3987e5;
       --series-low-wash: rgba(57,135,229,0.14);
+      --row-hover:      rgba(255,255,255,0.05);
     }
   }
 
@@ -142,6 +144,7 @@
   .legend-swatch { width: 14px; height: 2px; border-radius: 1px; }
   .legend-swatch.ring { width: 10px; height: 10px; border-radius: 50%; background: none; border: 2px solid; }
   .legend-swatch.dashed { width: 14px; height: 0; background: none; border-top: 2px dashed; border-radius: 0; }
+  .legend-swatch.dotted { width: 14px; height: 0; background: none; border-top: 2px dotted; border-radius: 0; }
 
   .chart-wrap { position: relative; }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
@@ -150,7 +153,7 @@
   .chart .gridline { stroke: var(--gridline); stroke-width: 1; }
   .chart .zero-line { stroke: var(--baseline); stroke-width: 1; }
   .chart .crosshair { stroke: var(--text-muted); stroke-width: 1; opacity: 0; pointer-events: none; }
-  .hit-layer { fill: transparent; cursor: crosshair; }
+  .hit-layer { fill: transparent; cursor: crosshair; touch-action: none; }
 
   .tooltip {
     position: absolute;
@@ -172,7 +175,9 @@
   .tooltip .t-key { width: 10px; height: 2px; border-radius: 1px; flex-shrink: 0; }
   .tooltip .t-value { font-weight: 600; }
   .tooltip .t-label { color: var(--text-secondary); }
+  .tooltip .t-divider { border-top: 1px solid var(--border); margin: 6px 0; }
 
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   table.data-table {
     width: 100%;
     border-collapse: collapse;
@@ -183,8 +188,13 @@
     text-align: left;
     padding: 6px 10px;
     border-bottom: 1px solid var(--gridline);
+    white-space: nowrap;
   }
   table.data-table th { color: var(--text-secondary); font-weight: 500; }
+  tr.spark-row { cursor: pointer; }
+  tr.spark-row:hover, tr.spark-row:focus-visible { background: var(--row-hover); outline: none; }
+  tr.spark-row td { vertical-align: middle; }
+  .spark-svg { display: block; }
 
   .hidden { display: none !important; }
   .empty-state { color: var(--text-secondary); padding: 24px 0; }
@@ -212,22 +222,39 @@
   <div id="content">
     <section class="card">
       <div class="card-header">
-        <h2>Next 14 days: current forecast vs. first forecast</h2>
+        <h2>Next 14 days: current, first-seen &amp; most extreme forecast</h2>
         <button class="table-toggle" data-target="outlook">Table view</button>
       </div>
       <p class="card-sub">
         Solid lines are today's forecast for every upcoming date. Dashed lines are what BBC predicted
-        for that same date the very first time it appeared &mdash; the shaded band is how far it's
-        moved since.
+        the very first time each date appeared. Dotted lines are the most extreme prediction BBC has
+        ever given for that date &mdash; the hottest "high" it ever showed, the coldest "low" it ever
+        showed &mdash; regardless of when. The shaded band spans from that extreme down to today's
+        forecast, so the tallest bands are the dates with the biggest swings.
       </p>
       <div class="legend">
         <span class="legend-item"><span class="legend-swatch" style="background:var(--series-high)"></span>Current high</span>
         <span class="legend-item"><span class="legend-swatch dashed" style="border-color:var(--series-high)"></span>First-seen high</span>
+        <span class="legend-item"><span class="legend-swatch dotted" style="border-color:var(--series-high)"></span>Highest-ever high</span>
         <span class="legend-item"><span class="legend-swatch" style="background:var(--series-low)"></span>Current low</span>
         <span class="legend-item"><span class="legend-swatch dashed" style="border-color:var(--series-low)"></span>First-seen low</span>
+        <span class="legend-item"><span class="legend-swatch dotted" style="border-color:var(--series-low)"></span>Lowest-ever low</span>
       </div>
       <div class="chart-wrap" id="outlook-chart-wrap"></div>
-      <div class="hidden" id="outlook-table-wrap"></div>
+      <div class="hidden table-scroll" id="outlook-table-wrap"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-header">
+        <h2>Shape of each day's revisions</h2>
+      </div>
+      <p class="card-sub">
+        A quick trend line per day, across every snapshot recorded so far &mdash; orange for
+        predicted high, blue for predicted low. This is what the chart above can't show: a
+        steady creep and a dip-then-recovery can land on the same first/highest/current numbers
+        but look completely different here. Click a row to open it in the chart below.
+      </p>
+      <div class="table-scroll" id="shape-table-wrap"></div>
     </section>
 
     <section class="stat-row" id="stat-row" aria-label="Headline bias summary"></section>
@@ -246,10 +273,10 @@
         <span class="legend-item"><span class="legend-swatch" style="background:var(--series-low)"></span>Low bias</span>
       </div>
       <div class="chart-wrap" id="bias-chart-wrap"></div>
-      <div class="hidden" id="bias-table-wrap"></div>
+      <div class="hidden table-scroll" id="bias-table-wrap"></div>
     </section>
 
-    <section class="card">
+    <section class="card" id="revision-section">
       <div class="card-header">
         <h2>Revision history for a date</h2>
         <button class="table-toggle" data-target="revision">Table view</button>
@@ -265,7 +292,7 @@
         <span class="legend-item"><span class="legend-swatch ring" style="border-color:var(--text-secondary)"></span>Observed (actual)</span>
       </div>
       <div class="chart-wrap" id="revision-chart-wrap"></div>
-      <div class="hidden" id="revision-table-wrap"></div>
+      <div class="hidden table-scroll" id="revision-table-wrap"></div>
     </section>
 
     <footer id="footer-note"></footer>

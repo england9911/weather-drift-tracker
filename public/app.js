@@ -77,6 +77,15 @@ function addDot(svg, x, y, color, r) {
 
 function addRing(svg, x, y, color, r) {
   const surface = cssVar("--surface-1");
+  // Invisible oversized hit target first (bigger than the mark), so touch/mouse
+  // hover is easy to land on even though the visible ring stays small.
+  const hit = document.createElementNS(SVG_NS, "circle");
+  hit.setAttribute("cx", x);
+  hit.setAttribute("cy", y);
+  hit.setAttribute("r", Math.max(r + 8, 12));
+  hit.setAttribute("fill", "transparent");
+  svg.appendChild(hit);
+
   const ring = document.createElementNS(SVG_NS, "circle");
   ring.setAttribute("cx", x);
   ring.setAttribute("cy", y);
@@ -86,7 +95,19 @@ function addRing(svg, x, y, color, r) {
   ring.setAttribute("stroke-width", 2.5);
   ring.setAttribute("tabindex", "0");
   svg.appendChild(ring);
-  return ring;
+  return { ring, hit };
+}
+
+function addDiamondMarker(svg, x, y, color, r) {
+  const surface = cssVar("--surface-1");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", `M${x},${y - r} L${x + r},${y} L${x},${y + r} L${x - r},${y} Z`);
+  path.setAttribute("fill", surface);
+  path.setAttribute("stroke", color);
+  path.setAttribute("stroke-width", 2.5);
+  path.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(path);
+  return path;
 }
 
 function addRingMarker(svg, x, y, color, r) {
@@ -119,6 +140,12 @@ function showTooltip(tooltipEl, wrapEl, clientX, clientY, headerText, rows, valu
   header.textContent = headerText;
   tooltipEl.appendChild(header);
   for (const row of rows) {
+    if (row.divider) {
+      const divider = document.createElement("div");
+      divider.className = "t-divider";
+      tooltipEl.appendChild(divider);
+      continue;
+    }
     const rowEl = document.createElement("div");
     rowEl.className = "t-row";
     const key = document.createElement("span");
@@ -208,12 +235,13 @@ function createLineChart(mountEl, opts) {
 
   for (const m of markers) {
     for (const item of m.items) {
-      const ring = addRing(svg, xScale(m.x), yScale(item.value), item.color, 5);
+      const { ring, hit: markerHit } = addRing(svg, xScale(m.x), yScale(item.value), item.color, 5);
       const showForMarker = (clientX, clientY) => {
         showTooltip(tooltipEl, mountEl, clientX, clientY, m.label, [item], yTickFormat);
       };
-      ring.addEventListener("pointerenter", (e) => showForMarker(e.clientX, e.clientY));
-      ring.addEventListener("pointerleave", () => hideTooltip(tooltipEl));
+      markerHit.addEventListener("pointerenter", (e) => showForMarker(e.clientX, e.clientY));
+      markerHit.addEventListener("pointerdown", (e) => showForMarker(e.clientX, e.clientY));
+      markerHit.addEventListener("pointerleave", () => hideTooltip(tooltipEl));
       ring.addEventListener("focus", () => {
         const rect = ring.getBoundingClientRect();
         showForMarker(rect.left, rect.top);
@@ -253,7 +281,7 @@ function createLineChart(mountEl, opts) {
     return best;
   }
 
-  hit.addEventListener("pointermove", (e) => {
+  const handleHitPoint = (e) => {
     const idx = nearestIndex(e.clientX);
     const x = xDomainValues[idx];
     crosshair.setAttribute("x1", xScale(x));
@@ -261,11 +289,25 @@ function createLineChart(mountEl, opts) {
     crosshair.style.opacity = 1;
     const rows = series.map((s) => ({ color: s.color, label: s.label, value: s.values[idx] }));
     showTooltip(tooltipEl, mountEl, e.clientX, e.clientY, tooltipHeader(x), rows, yTickFormat);
-  });
-  hit.addEventListener("pointerleave", () => {
+  };
+  mountEl._activeCrosshairHide = () => {
     crosshair.style.opacity = 0;
+  };
+  hit.addEventListener("pointermove", handleHitPoint);
+  hit.addEventListener("pointerdown", handleHitPoint);
+  hit.addEventListener("pointerleave", () => {
+    mountEl._activeCrosshairHide();
     hideTooltip(tooltipEl);
   });
+  if (!mountEl._outsideDismissWired) {
+    mountEl._outsideDismissWired = true;
+    document.addEventListener("pointerdown", (e) => {
+      if (!mountEl.contains(e.target)) {
+        mountEl._activeCrosshairHide();
+        hideTooltip(tooltipEl);
+      }
+    });
+  }
 
   mountEl.querySelectorAll("svg").forEach((old) => old.remove());
   mountEl.insertBefore(svg, mountEl.firstChild);
@@ -277,14 +319,31 @@ function computeOutlookRows(dates) {
     .filter((d) => d.targetDate >= todayIso && d.snapshots.length > 0)
     .sort((a, b) => (a.targetDate < b.targetDate ? -1 : 1))
     .map((d) => {
-      const first = d.snapshots[0];
-      const current = d.snapshots[d.snapshots.length - 1];
+      const snaps = d.snapshots;
+      const first = snaps[0];
+      const current = snaps[snaps.length - 1];
+
+      let highest = snaps[0];
+      let lowest = snaps[0];
+      for (const s of snaps) {
+        if (s.maxTempC > highest.maxTempC) highest = s;
+        if (s.minTempC < lowest.minTempC) lowest = s;
+      }
+
       return {
         targetDate: d.targetDate,
         firstHigh: first.maxTempC,
+        firstHighAt: first.fetchedAt,
         firstLow: first.minTempC,
+        firstLowAt: first.fetchedAt,
         currentHigh: current.maxTempC,
+        currentHighAt: current.fetchedAt,
         currentLow: current.minTempC,
+        currentLowAt: current.fetchedAt,
+        extremeHigh: highest.maxTempC,
+        extremeHighAt: highest.fetchedAt,
+        extremeLow: lowest.minTempC,
+        extremeLowAt: lowest.fetchedAt,
       };
     });
 }
@@ -312,7 +371,7 @@ function renderOutlookChart(dates) {
   const n = rows.length;
   const xPos = (i) => margin.left + (n === 1 ? plotW / 2 : (plotW * i) / (n - 1));
 
-  const allY = rows.flatMap((r) => [r.firstHigh, r.currentHigh, r.firstLow, r.currentLow]);
+  const allY = rows.flatMap((r) => [r.firstHigh, r.currentHigh, r.extremeHigh, r.firstLow, r.currentLow, r.extremeLow]);
   const yMinRaw = Math.min(...allY);
   const yMaxRaw = Math.max(...allY);
   const yPad = (yMaxRaw - yMinRaw) * 0.2 || 1;
@@ -324,7 +383,7 @@ function renderOutlookChart(dates) {
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   svg.setAttribute("class", "chart");
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", "Next 14 days: current forecast versus first forecast");
+  svg.setAttribute("aria-label", "Next 14 days: current, first-seen, and most extreme forecast");
 
   for (const t of niceTicks(yMin, yMax, 4)) {
     const gy = yScale(t);
@@ -334,28 +393,30 @@ function renderOutlookChart(dates) {
   addLine(svg, margin.left, margin.top + plotH, width - margin.right, margin.top + plotH, "axis-line");
   rows.forEach((r, i) => addText(svg, xPos(i), margin.top + plotH + 18, formatDayMonth(r.targetDate), "middle"));
 
-  function bandPath(getFirst, getCurrent) {
-    const forward = rows.map((r, i) => `${i === 0 ? "M" : "L"}${xPos(i)},${yScale(getCurrent(r))}`).join(" ");
+  // Band spans the historical extreme down to today's forecast (extreme always
+  // dominates current by construction), so band height = size of the gap.
+  function bandPath(getA, getB) {
+    const forward = rows.map((r, i) => `${i === 0 ? "M" : "L"}${xPos(i)},${yScale(getA(r))}`).join(" ");
     const backward = rows
       .map((r, i) => ({ r, i }))
       .reverse()
-      .map(({ r, i }) => `L${xPos(i)},${yScale(getFirst(r))}`)
+      .map(({ r, i }) => `L${xPos(i)},${yScale(getB(r))}`)
       .join(" ");
     return `${forward} ${backward} Z`;
   }
 
-  function addBand(getFirst, getCurrent, wash) {
+  function addBand(getA, getB, wash) {
     const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", bandPath(getFirst, getCurrent));
+    path.setAttribute("d", bandPath(getA, getB));
     path.setAttribute("fill", wash);
     path.setAttribute("stroke", "none");
     svg.appendChild(path);
   }
 
-  addBand((r) => r.firstHigh, (r) => r.currentHigh, highWash);
-  addBand((r) => r.firstLow, (r) => r.currentLow, lowWash);
+  addBand((r) => r.extremeHigh, (r) => r.currentHigh, highWash);
+  addBand((r) => r.extremeLow, (r) => r.currentLow, lowWash);
 
-  function addSeriesLine(getValue, color, dashed) {
+  function addSeriesLine(getValue, color, style) {
     const d = rows.map((r, i) => `${i === 0 ? "M" : "L"}${xPos(i)},${yScale(getValue(r))}`).join(" ");
     const path = document.createElementNS(SVG_NS, "path");
     path.setAttribute("d", d);
@@ -364,18 +425,25 @@ function renderOutlookChart(dates) {
     path.setAttribute("stroke-width", "2");
     path.setAttribute("stroke-linejoin", "round");
     path.setAttribute("stroke-linecap", "round");
-    if (dashed) path.setAttribute("stroke-dasharray", "5,4");
+    if (style === "dashed") path.setAttribute("stroke-dasharray", "5,4");
+    if (style === "dotted") path.setAttribute("stroke-dasharray", "0.1,5");
     svg.appendChild(path);
   }
 
-  addSeriesLine((r) => r.firstHigh, highColor, true);
-  addSeriesLine((r) => r.firstLow, lowColor, true);
-  addSeriesLine((r) => r.currentHigh, highColor, false);
-  addSeriesLine((r) => r.currentLow, lowColor, false);
+  addSeriesLine((r) => r.firstHigh, highColor, "dashed");
+  addSeriesLine((r) => r.firstLow, lowColor, "dashed");
+  addSeriesLine((r) => r.extremeHigh, highColor, "dotted");
+  addSeriesLine((r) => r.extremeLow, lowColor, "dotted");
+  addSeriesLine((r) => r.currentHigh, highColor, "solid");
+  addSeriesLine((r) => r.currentLow, lowColor, "solid");
 
   rows.forEach((r, i) => {
     addRingMarker(svg, xPos(i), yScale(r.firstHigh), highColor, 4);
     addRingMarker(svg, xPos(i), yScale(r.firstLow), lowColor, 4);
+  });
+  rows.forEach((r, i) => {
+    addDiamondMarker(svg, xPos(i), yScale(r.extremeHigh), highColor, 5);
+    addDiamondMarker(svg, xPos(i), yScale(r.extremeLow), lowColor, 5);
   });
   rows.forEach((r, i) => {
     addDot(svg, xPos(i), yScale(r.currentHigh), highColor, 4);
@@ -415,24 +483,41 @@ function renderOutlookChart(dates) {
     return best;
   }
 
-  hit.addEventListener("pointermove", (e) => {
+  const handleHitPoint = (e) => {
     const idx = nearestIndex(e.clientX);
     const r = rows[idx];
     crosshair.setAttribute("x1", xPos(idx));
     crosshair.setAttribute("x2", xPos(idx));
     crosshair.style.opacity = 1;
     const tooltipRows = [
-      { color: highColor, label: "Current high", value: r.currentHigh },
-      { color: highColor, label: "First-seen high", value: r.firstHigh },
-      { color: lowColor, label: "Current low", value: r.currentLow },
-      { color: lowColor, label: "First-seen low", value: r.firstLow },
+      { color: highColor, label: `Current high (${formatDateTime(r.currentHighAt)})`, value: r.currentHigh },
+      { color: highColor, label: `First-seen high (${formatDateTime(r.firstHighAt)})`, value: r.firstHigh },
+      { color: highColor, label: `Highest-ever high (${formatDateTime(r.extremeHighAt)})`, value: r.extremeHigh },
+      { divider: true },
+      { color: lowColor, label: `Current low (${formatDateTime(r.currentLowAt)})`, value: r.currentLow },
+      { color: lowColor, label: `First-seen low (${formatDateTime(r.firstLowAt)})`, value: r.firstLow },
+      { color: lowColor, label: `Lowest-ever low (${formatDateTime(r.extremeLowAt)})`, value: r.extremeLow },
     ];
     showTooltip(tooltipEl, wrap, e.clientX, e.clientY, formatDayMonth(r.targetDate), tooltipRows, formatTemp);
-  });
-  hit.addEventListener("pointerleave", () => {
+  };
+  wrap._activeCrosshairHide = () => {
     crosshair.style.opacity = 0;
+  };
+  hit.addEventListener("pointermove", handleHitPoint);
+  hit.addEventListener("pointerdown", handleHitPoint);
+  hit.addEventListener("pointerleave", () => {
+    wrap._activeCrosshairHide();
     hideTooltip(tooltipEl);
   });
+  if (!wrap._outsideDismissWired) {
+    wrap._outsideDismissWired = true;
+    document.addEventListener("pointerdown", (e) => {
+      if (!wrap.contains(e.target)) {
+        wrap._activeCrosshairHide();
+        hideTooltip(tooltipEl);
+      }
+    });
+  }
 
   wrap.querySelectorAll("svg").forEach((old) => old.remove());
   wrap.insertBefore(svg, wrap.firstChild);
@@ -441,18 +526,21 @@ function renderOutlookChart(dates) {
   table.className = "data-table";
   const thead = document.createElement("thead");
   thead.innerHTML =
-    "<tr><th>Date</th><th>First high</th><th>Current high</th><th>&Delta; high</th><th>First low</th><th>Current low</th><th>&Delta; low</th></tr>";
+    "<tr><th>Date</th><th>First high</th><th>Highest-ever high</th><th>Current high</th><th>&Delta; vs peak</th>" +
+    "<th>First low</th><th>Lowest-ever low</th><th>Current low</th><th>&Delta; vs trough</th></tr>";
   const tbody = document.createElement("tbody");
   for (const r of rows) {
     const tr = document.createElement("tr");
     const cells = [
       formatDayMonth(r.targetDate),
       formatTemp(r.firstHigh),
+      formatTemp(r.extremeHigh),
       formatTemp(r.currentHigh),
-      formatSignedTemp(r.currentHigh - r.firstHigh),
+      formatSignedTemp(r.currentHigh - r.extremeHigh),
       formatTemp(r.firstLow),
+      formatTemp(r.extremeLow),
       formatTemp(r.currentLow),
-      formatSignedTemp(r.currentLow - r.firstLow),
+      formatSignedTemp(r.currentLow - r.extremeLow),
     ];
     for (const c of cells) {
       const td = document.createElement("td");
@@ -464,6 +552,135 @@ function renderOutlookChart(dates) {
   table.append(thead, tbody);
   tableWrap.innerHTML = "";
   tableWrap.appendChild(table);
+}
+
+function computeShapeRows(dates) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  return dates
+    .filter((d) => d.targetDate >= todayIso && d.snapshots.length > 0)
+    .sort((a, b) => (a.targetDate < b.targetDate ? -1 : 1));
+}
+
+// A self-scaled mini trend line (Tufte-style sparkline) — shows the shape of every
+// revision for one date, not just first/extreme/current, so a steady creep and a
+// dip-then-recovery (which can share the same summary numbers) read differently.
+function buildSparklineSvg(snaps) {
+  const width = 120;
+  const height = 32;
+  const pad = 3;
+  const highColor = cssVar("--series-high");
+  const lowColor = cssVar("--series-low");
+
+  const allVals = snaps.flatMap((s) => [s.maxTempC, s.minTempC]);
+  const min = Math.min(...allVals);
+  const max = Math.max(...allVals);
+  const span = max - min || 1;
+
+  const xFor = (i) =>
+    pad + (snaps.length === 1 ? (width - pad * 2) / 2 : ((width - pad * 2) * i) / (snaps.length - 1));
+  const yFor = (v) => height - pad - ((v - min) / span) * (height - pad * 2);
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
+  svg.setAttribute("class", "spark-svg");
+  svg.setAttribute("role", "img");
+
+  const firstHigh = snaps[0].maxTempC;
+  const lastHigh = snaps[snaps.length - 1].maxTempC;
+  const firstLow = snaps[0].minTempC;
+  const lastLow = snaps[snaps.length - 1].minTempC;
+  svg.setAttribute(
+    "aria-label",
+    `High went from ${formatTemp(firstHigh)} to ${formatTemp(lastHigh)}; low went from ${formatTemp(
+      firstLow
+    )} to ${formatTemp(lastLow)}, across ${snaps.length} snapshot${snaps.length === 1 ? "" : "s"}.`
+  );
+
+  function addSparkLine(getValue, color) {
+    const d = snaps.map((s, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(getValue(s))}`).join(" ");
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", "1.5");
+    path.setAttribute("stroke-linejoin", "round");
+    path.setAttribute("stroke-linecap", "round");
+    svg.appendChild(path);
+
+    const lastIdx = snaps.length - 1;
+    const dot = document.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("cx", xFor(lastIdx));
+    dot.setAttribute("cy", yFor(getValue(snaps[lastIdx])));
+    dot.setAttribute("r", 2);
+    dot.setAttribute("fill", color);
+    svg.appendChild(dot);
+  }
+
+  addSparkLine((s) => s.maxTempC, highColor);
+  addSparkLine((s) => s.minTempC, lowColor);
+
+  return svg;
+}
+
+function renderShapeTable(dates, onSelectDate) {
+  const wrap = document.getElementById("shape-table-wrap");
+  const rows = computeShapeRows(dates);
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="card-sub">No upcoming dates tracked yet.</p>';
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "data-table";
+  const thead = document.createElement("thead");
+  thead.innerHTML =
+    "<tr><th>Date</th><th>Shape (high / low)</th><th>First high</th><th>Current high</th><th>First low</th><th>Current low</th></tr>";
+  const tbody = document.createElement("tbody");
+
+  for (const d of rows) {
+    const snaps = d.snapshots;
+    const first = snaps[0];
+    const current = snaps[snaps.length - 1];
+
+    const tr = document.createElement("tr");
+    tr.className = "spark-row";
+    tr.tabIndex = 0;
+    tr.setAttribute("role", "button");
+    tr.setAttribute("aria-label", `View revision history for ${formatDayMonth(d.targetDate)}`);
+
+    const dateTd = document.createElement("td");
+    dateTd.textContent = formatDayMonth(d.targetDate);
+
+    const sparkTd = document.createElement("td");
+    sparkTd.appendChild(buildSparklineSvg(snaps));
+
+    const valueCells = [
+      formatTemp(first.maxTempC),
+      formatTemp(current.maxTempC),
+      formatTemp(first.minTempC),
+      formatTemp(current.minTempC),
+    ].map((c) => {
+      const td = document.createElement("td");
+      td.textContent = c;
+      return td;
+    });
+
+    tr.append(dateTd, sparkTd, ...valueCells);
+    tr.addEventListener("click", () => onSelectDate(d.targetDate));
+    tr.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelectDate(d.targetDate);
+      }
+    });
+    tbody.appendChild(tr);
+  }
+
+  table.append(thead, tbody);
+  wrap.innerHTML = "";
+  wrap.appendChild(table);
 }
 
 function computeBiasBuckets(dates) {
@@ -668,6 +885,15 @@ function populateDateSelect(dates) {
   });
 }
 
+function selectDateInRevisionChart(dates, targetDate) {
+  const select = document.getElementById("date-select");
+  const entry = dates.find((d) => d.targetDate === targetDate);
+  if (!entry || !select) return;
+  select.value = targetDate;
+  renderRevisionChart(entry);
+  document.getElementById("revision-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function renderFooter(json) {
   const footer = document.getElementById("footer-note");
   const pending = json.dates.filter((d) => !d.actual).length;
@@ -697,6 +923,7 @@ async function main() {
   }
 
   renderOutlookChart(json.dates);
+  renderShapeTable(json.dates, (targetDate) => selectDateInRevisionChart(json.dates, targetDate));
   renderStatTiles(json.dates);
   renderBiasChart(json.dates);
   populateDateSelect(json.dates);
