@@ -106,7 +106,7 @@
     margin-bottom: 8px;
   }
   .filter-row label { color: var(--text-secondary); font-size: 0.85rem; }
-  .filter-row select {
+  .filter-row select, .filter-row input[type="date"] {
     font: inherit;
     font-size: 0.9rem;
     padding: 6px 10px;
@@ -115,6 +115,8 @@
     background: var(--surface-1);
     color: var(--text-primary);
   }
+  .range-filter { margin-bottom: 20px; flex-wrap: wrap; }
+  .range-label { color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 12px; }
 
   .stat-row {
     display: grid;
@@ -220,16 +222,33 @@
   </div>
 
   <div id="content">
+    <div class="filter-row range-filter">
+      <label for="range-preset">Show</label>
+      <select id="range-preset">
+        <option value="next14">Next 14 days</option>
+        <option value="last14">Last 14 days</option>
+        <option value="last30">Last 30 days</option>
+        <option value="all">All time</option>
+        <option value="custom">Custom range&hellip;</option>
+      </select>
+      <span id="custom-range-inputs" class="hidden">
+        <input type="date" id="range-start" aria-label="Range start" />
+        <label for="range-end">to</label>
+        <input type="date" id="range-end" aria-label="Range end" />
+      </span>
+    </div>
+
     <section class="card">
       <div class="card-header">
-        <h2>Next 14 days: current, first-seen &amp; most extreme forecast</h2>
+        <h2>Forecast outlook: current, first-seen &amp; most extreme forecast</h2>
         <button class="table-toggle" data-target="outlook">Table view</button>
       </div>
+      <p class="range-label" id="outlook-range-label"></p>
       <p class="card-sub">
-        Solid lines are today's forecast for every upcoming date. Dashed lines are what BBC predicted
-        the very first time each date appeared. Dotted lines are the most extreme prediction BBC has
-        ever given for that date &mdash; the hottest "high" it ever showed, the coldest "low" it ever
-        showed &mdash; regardless of when. The shaded band spans from that extreme down to today's
+        Solid lines are today's forecast for every date in the period above. Dashed lines are what BBC
+        predicted the very first time each date appeared. Dotted lines are the most extreme prediction
+        BBC has ever given for that date &mdash; the hottest "high" it ever showed, the coldest "low" it
+        ever showed &mdash; regardless of when. The shaded band spans from that extreme down to today's
         forecast, so the tallest bands are the dates with the biggest swings.
       </p>
       <div class="legend">
@@ -248,11 +267,13 @@
       <div class="card-header">
         <h2>Shape of each day's revisions</h2>
       </div>
+      <p class="range-label" id="shape-range-label"></p>
       <p class="card-sub">
-        A quick trend line per day, across every snapshot recorded so far &mdash; orange for
-        predicted high, blue for predicted low. This is what the chart above can't show: a
-        steady creep and a dip-then-recovery can land on the same first/highest/current numbers
-        but look completely different here. Click a row to open it in the chart below.
+        A quick trend line per day in the period above, across every snapshot recorded for that
+        date &mdash; orange for predicted high, blue for predicted low. This is what the chart
+        above can't show: a steady creep and a dip-then-recovery can land on the same
+        first/highest/current numbers but look completely different here. Click a row to open it
+        in the chart below.
       </p>
       <div class="table-scroll" id="shape-table-wrap"></div>
     </section>

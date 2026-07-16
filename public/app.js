@@ -313,10 +313,71 @@ function createLineChart(mountEl, opts) {
   mountEl.insertBefore(svg, mountEl.firstChild);
 }
 
-function computeOutlookRows(dates) {
-  const todayIso = new Date().toISOString().slice(0, 10);
+function addDaysIso(iso, days) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function computePresetRange(preset, customStart, customEnd) {
+  const today = new Date().toISOString().slice(0, 10);
+  switch (preset) {
+    case "last14":
+      return { start: addDaysIso(today, -13), end: today };
+    case "last30":
+      return { start: addDaysIso(today, -29), end: today };
+    case "all":
+      return { start: "0000-01-01", end: "9999-12-31" };
+    case "custom":
+      return { start: customStart || today, end: customEnd || today };
+    case "next14":
+    default:
+      return { start: today, end: addDaysIso(today, 13) };
+  }
+}
+
+function formatRangeLabel(range, preset) {
+  if (preset === "all") return "Showing all tracked dates.";
+  return `Showing ${formatDayMonth(range.start)} – ${formatDayMonth(range.end)}.`;
+}
+
+function setupRangeFilter(dates) {
+  const presetSelect = document.getElementById("range-preset");
+  const customInputs = document.getElementById("custom-range-inputs");
+  const startInput = document.getElementById("range-start");
+  const endInput = document.getElementById("range-end");
+  const outlookLabel = document.getElementById("outlook-range-label");
+  const shapeLabel = document.getElementById("shape-range-label");
+
+  function rerender() {
+    const preset = presetSelect.value;
+    const range = computePresetRange(preset, startInput.value, endInput.value);
+    const label = formatRangeLabel(range, preset);
+    outlookLabel.textContent = label;
+    shapeLabel.textContent = label;
+    renderOutlookChart(dates, range);
+    renderShapeTable(dates, range, (targetDate) => selectDateInRevisionChart(dates, targetDate));
+  }
+
+  presetSelect.addEventListener("change", () => {
+    const isCustom = presetSelect.value === "custom";
+    customInputs.classList.toggle("hidden", !isCustom);
+    if (isCustom && !startInput.value) {
+      const fallback = computePresetRange("next14");
+      startInput.value = fallback.start;
+      endInput.value = fallback.end;
+    }
+    rerender();
+  });
+  startInput.addEventListener("change", rerender);
+  endInput.addEventListener("change", rerender);
+
+  rerender();
+}
+
+function computeOutlookRows(dates, range) {
   return dates
-    .filter((d) => d.targetDate >= todayIso && d.snapshots.length > 0)
+    .filter((d) => d.targetDate >= range.start && d.targetDate <= range.end && d.snapshots.length > 0)
     .sort((a, b) => (a.targetDate < b.targetDate ? -1 : 1))
     .map((d) => {
       const snaps = d.snapshots;
@@ -348,12 +409,12 @@ function computeOutlookRows(dates) {
     });
 }
 
-function renderOutlookChart(dates) {
+function renderOutlookChart(dates, range) {
   const wrap = document.getElementById("outlook-chart-wrap");
   const tableWrap = document.getElementById("outlook-table-wrap");
-  const rows = computeOutlookRows(dates);
+  const rows = computeOutlookRows(dates, range);
   if (!rows.length) {
-    wrap.innerHTML = '<p class="card-sub">No upcoming dates tracked yet.</p>';
+    wrap.innerHTML = '<p class="card-sub">No dates tracked in this period.</p>';
     tableWrap.innerHTML = "";
     return;
   }
@@ -554,10 +615,9 @@ function renderOutlookChart(dates) {
   tableWrap.appendChild(table);
 }
 
-function computeShapeRows(dates) {
-  const todayIso = new Date().toISOString().slice(0, 10);
+function computeShapeRows(dates, range) {
   return dates
-    .filter((d) => d.targetDate >= todayIso && d.snapshots.length > 0)
+    .filter((d) => d.targetDate >= range.start && d.targetDate <= range.end && d.snapshots.length > 0)
     .sort((a, b) => (a.targetDate < b.targetDate ? -1 : 1));
 }
 
@@ -624,11 +684,11 @@ function buildSparklineSvg(snaps) {
   return svg;
 }
 
-function renderShapeTable(dates, onSelectDate) {
+function renderShapeTable(dates, range, onSelectDate) {
   const wrap = document.getElementById("shape-table-wrap");
-  const rows = computeShapeRows(dates);
+  const rows = computeShapeRows(dates, range);
   if (!rows.length) {
-    wrap.innerHTML = '<p class="card-sub">No upcoming dates tracked yet.</p>';
+    wrap.innerHTML = '<p class="card-sub">No dates tracked in this period.</p>';
     return;
   }
 
@@ -931,8 +991,7 @@ async function main() {
     return;
   }
 
-  renderOutlookChart(json.dates);
-  renderShapeTable(json.dates, (targetDate) => selectDateInRevisionChart(json.dates, targetDate));
+  setupRangeFilter(json.dates);
   renderStatTiles(json.dates);
   renderBiasChart(json.dates);
   populateDateSelect(json.dates);

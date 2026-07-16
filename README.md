@@ -35,20 +35,25 @@ Everything lands in a Cloudflare D1 (SQLite) database. A small `/api/data`
 endpoint serves the joined data, and a static dashboard (vanilla HTML/SVG/JS,
 no framework) renders four views:
 
-- **Next 14 days: current, first-seen & most extreme forecast** — every
-  currently upcoming date in one chart, three reference points per
+- A **date-range picker** (next 14 days / last 14 / last 30 / all time /
+  custom) sits above the first two views below and scopes both of them —
+  so you're not limited to "next 14 days," you can look at any past period
+  too. "Warm bias by lead time" deliberately ignores this picker and always
+  aggregates every resolved date, since that's a different question.
+- **Forecast outlook: current, first-seen & most extreme forecast** — every
+  date in the selected period in one chart, three reference points per
   temperature series: today's forecast (solid), the first-ever prediction
   for that date (dashed), and the single most extreme prediction BBC has
   *ever* given for it — hottest high, coldest low, regardless of when
   (dotted). The shaded band spans from that extreme down to today's
   forecast, so the tallest bands are the dates with the biggest swings.
   This is a **summary** view — three sampled points, not the full story.
-- **Shape of each day's revisions** — a compact table, one row per upcoming
-  date, each with a small sparkline of *every* snapshot recorded for that
-  date. This exists because the summary chart above can't distinguish a
-  steady creep from a dip-then-recovery — both can share the same
-  first/extreme/current numbers but look completely different as a shape.
-  Click a row to jump straight to that date in the chart below.
+- **Shape of each day's revisions** — a compact table, one row per date in
+  the selected period, each with a small sparkline of *every* snapshot
+  recorded for that date. This exists because the summary chart above can't
+  distinguish a steady creep from a dip-then-recovery — both can share the
+  same first/extreme/current numbers but look completely different as a
+  shape. Click a row to jump straight to that date in the chart below.
 - **Revision history for a date** — every snapshot BBC gave for a chosen
   date, in order, so you can see it change (or not) as the date approached.
   This is the full-detail view behind both of the above.
