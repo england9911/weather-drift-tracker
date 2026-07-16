@@ -56,7 +56,10 @@ no framework) renders four views:
   shape. Click a row to jump straight to that date in the chart below.
 - **Revision history for a date** — every snapshot BBC gave for a chosen
   date, in order, so you can see it change (or not) as the date approached.
-  This is the full-detail view behind both of the above.
+  This is the full-detail view behind both of the above. Once a date has
+  an actual, its observed high/low are drawn as faint full-width reference
+  lines (not just an endpoint marker), so the gap between prediction and
+  outcome is visible at every point along the line, not only at the end.
 - **Warm bias by lead time** — averaged across every date with a known
   actual, `predicted − actual` at each lead time (6 days out, 5 days out,
   ... day of). This is the chart that actually tests the hypothesis.

@@ -75,29 +75,6 @@ function addDot(svg, x, y, color, r) {
   return dot;
 }
 
-function addRing(svg, x, y, color, r) {
-  const surface = cssVar("--surface-1");
-  // Invisible oversized hit target first (bigger than the mark), so touch/mouse
-  // hover is easy to land on even though the visible ring stays small.
-  const hit = document.createElementNS(SVG_NS, "circle");
-  hit.setAttribute("cx", x);
-  hit.setAttribute("cy", y);
-  hit.setAttribute("r", Math.max(r + 8, 12));
-  hit.setAttribute("fill", "transparent");
-  svg.appendChild(hit);
-
-  const ring = document.createElementNS(SVG_NS, "circle");
-  ring.setAttribute("cx", x);
-  ring.setAttribute("cy", y);
-  ring.setAttribute("r", r);
-  ring.setAttribute("fill", surface);
-  ring.setAttribute("stroke", color);
-  ring.setAttribute("stroke-width", 2.5);
-  ring.setAttribute("tabindex", "0");
-  svg.appendChild(ring);
-  return { ring, hit };
-}
-
 function addDiamondMarker(svg, x, y, color, r) {
   const surface = cssVar("--surface-1");
   const path = document.createElementNS(SVG_NS, "path");
@@ -175,20 +152,19 @@ function hideTooltip(tooltipEl) {
  * off-series ring markers (used for "Observed" points at a different x).
  */
 function createLineChart(mountEl, opts) {
-  const { xDomainValues, series, markers = [], zeroLine = false, xTicks, yTickFormat, tooltipHeader } = opts;
+  const { xDomainValues, series, refLines = [], zeroLine = false, xTicks, yTickFormat, tooltipHeader } = opts;
   const width = 860;
   const height = 300;
   const margin = { top: 16, right: 16, bottom: 32, left: 46 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
 
-  const allX = xDomainValues.concat(markers.map((m) => m.x));
-  const xMin = Math.min(...allX);
-  const xMax = Math.max(...allX);
+  const xMin = Math.min(...xDomainValues);
+  const xMax = Math.max(...xDomainValues);
   const xSpan = xMax - xMin || 1;
   const xScale = (x) => margin.left + ((x - xMin) / xSpan) * plotW;
 
-  let allY = series.flatMap((s) => s.values).concat(markers.flatMap((m) => m.items.map((i) => i.value)));
+  let allY = series.flatMap((s) => s.values).concat(refLines.map((r) => r.y));
   if (zeroLine) allY = allY.concat([0]);
   const yMinRaw = Math.min(...allY);
   const yMaxRaw = Math.max(...allY);
@@ -213,6 +189,22 @@ function createLineChart(mountEl, opts) {
     addLine(svg, margin.left, yScale(0), width - margin.right, yScale(0), "zero-line");
   }
 
+  // Full-width reference lines (e.g. the observed actual) drawn faint and behind
+  // the real series, so the gap between prediction and outcome reads at every x,
+  // not just at one endpoint.
+  for (const ref of refLines) {
+    const ry = yScale(ref.y);
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", margin.left);
+    line.setAttribute("x2", width - margin.right);
+    line.setAttribute("y1", ry);
+    line.setAttribute("y2", ry);
+    line.setAttribute("stroke", ref.color);
+    line.setAttribute("stroke-width", "1.5");
+    line.setAttribute("stroke-opacity", "0.55");
+    svg.appendChild(line);
+  }
+
   addLine(svg, margin.left, margin.top + plotH, width - margin.right, margin.top + plotH, "axis-line");
   for (const tick of xTicks) {
     addText(svg, xScale(tick.x), margin.top + plotH + 18, tick.label, "middle");
@@ -232,23 +224,6 @@ function createLineChart(mountEl, opts) {
   }
 
   const tooltipEl = getTooltipEl(mountEl);
-
-  for (const m of markers) {
-    for (const item of m.items) {
-      const { ring, hit: markerHit } = addRing(svg, xScale(m.x), yScale(item.value), item.color, 5);
-      const showForMarker = (clientX, clientY) => {
-        showTooltip(tooltipEl, mountEl, clientX, clientY, m.label, [item], yTickFormat);
-      };
-      markerHit.addEventListener("pointerenter", (e) => showForMarker(e.clientX, e.clientY));
-      markerHit.addEventListener("pointerdown", (e) => showForMarker(e.clientX, e.clientY));
-      markerHit.addEventListener("pointerleave", () => hideTooltip(tooltipEl));
-      ring.addEventListener("focus", () => {
-        const rect = ring.getBoundingClientRect();
-        showForMarker(rect.left, rect.top);
-      });
-      ring.addEventListener("blur", () => hideTooltip(tooltipEl));
-    }
-  }
 
   const crosshair = document.createElementNS(SVG_NS, "line");
   crosshair.setAttribute("class", "crosshair");
@@ -287,7 +262,9 @@ function createLineChart(mountEl, opts) {
     crosshair.setAttribute("x1", xScale(x));
     crosshair.setAttribute("x2", xScale(x));
     crosshair.style.opacity = 1;
-    const rows = series.map((s) => ({ color: s.color, label: s.label, value: s.values[idx] }));
+    const rows = series
+      .map((s) => ({ color: s.color, label: s.label, value: s.values[idx] }))
+      .concat(refLines.map((r) => ({ color: r.color, label: r.label, value: r.y })));
     showTooltip(tooltipEl, mountEl, e.clientX, e.clientY, tooltipHeader(x), rows, yTickFormat);
   };
   mountEl._activeCrosshairHide = () => {
@@ -860,26 +837,14 @@ function renderRevisionChart(dateEntry) {
   const lowColor = cssVar("--series-low");
   const xDomainValues = snaps.map((s) => Date.parse(s.fetchedAt));
 
-  const markers = [];
+  // Drawn as full-width horizontal lines rather than a single point, so the gap
+  // between prediction and outcome is visible at every x, not just at one end.
+  const refLines = [];
   if (dateEntry.actual) {
-    // Placed just after the last snapshot, not at a fixed clock time — the actual
-    // is only knowable once every revision for the date is in, so it belongs at
-    // the end of the line. BBC sometimes keeps revising a date's forecast for
-    // hours past midnight, so a fixed time (e.g. "noon") can land surprisingly
-    // early relative to how far the snapshots actually stretch.
-    const firstSnapTime = xDomainValues[0];
-    const lastSnapTime = xDomainValues[xDomainValues.length - 1];
-    const span = lastSnapTime - firstSnapTime;
-    const offset = Math.max(span * 0.08, 2 * 60 * 60 * 1000);
-    const actualX = lastSnapTime + offset;
-    markers.push({
-      x: actualX,
-      label: "Observed",
-      items: [
-        { color: highColor, value: dateEntry.actual.observedMaxC, label: "Observed high" },
-        { color: lowColor, value: dateEntry.actual.observedMinC, label: "Observed low" },
-      ],
-    });
+    refLines.push(
+      { y: dateEntry.actual.observedMaxC, color: highColor, label: "Observed high" },
+      { y: dateEntry.actual.observedMinC, color: lowColor, label: "Observed low" }
+    );
   }
 
   const uniqueDayTicks = [];
@@ -898,7 +863,7 @@ function renderRevisionChart(dateEntry) {
       { color: highColor, label: "Predicted high", values: snaps.map((s) => s.maxTempC) },
       { color: lowColor, label: "Predicted low", values: snaps.map((s) => s.minTempC) },
     ],
-    markers,
+    refLines,
     xTicks: uniqueDayTicks,
     yTickFormat: formatTemp,
     tooltipHeader: (x) => formatDateTime(new Date(x).toISOString()),

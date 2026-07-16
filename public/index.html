@@ -144,7 +144,6 @@
   }
   .legend-item { display: flex; align-items: center; gap: 6px; }
   .legend-swatch { width: 14px; height: 2px; border-radius: 1px; }
-  .legend-swatch.ring { width: 10px; height: 10px; border-radius: 50%; background: none; border: 2px solid; }
   .legend-swatch.dashed { width: 14px; height: 0; background: none; border-top: 2px dashed; border-radius: 0; }
   .legend-swatch.dotted { width: 14px; height: 0; background: none; border-top: 2px dotted; border-radius: 0; }
 
@@ -310,7 +309,8 @@
       <div class="legend">
         <span class="legend-item"><span class="legend-swatch" style="background:var(--series-high)"></span>Predicted high</span>
         <span class="legend-item"><span class="legend-swatch" style="background:var(--series-low)"></span>Predicted low</span>
-        <span class="legend-item"><span class="legend-swatch ring" style="border-color:var(--text-secondary)"></span>Observed (actual)</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:var(--series-high); opacity:0.55"></span>Observed high</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:var(--series-low); opacity:0.55"></span>Observed low</span>
       </div>
       <div class="chart-wrap" id="revision-chart-wrap"></div>
       <div class="hidden table-scroll" id="revision-table-wrap"></div>
