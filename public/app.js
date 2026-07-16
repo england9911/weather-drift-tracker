@@ -802,7 +802,16 @@ function renderRevisionChart(dateEntry) {
 
   const markers = [];
   if (dateEntry.actual) {
-    const actualX = Date.parse(`${dateEntry.targetDate}T12:00:00Z`);
+    // Placed just after the last snapshot, not at a fixed clock time — the actual
+    // is only knowable once every revision for the date is in, so it belongs at
+    // the end of the line. BBC sometimes keeps revising a date's forecast for
+    // hours past midnight, so a fixed time (e.g. "noon") can land surprisingly
+    // early relative to how far the snapshots actually stretch.
+    const firstSnapTime = xDomainValues[0];
+    const lastSnapTime = xDomainValues[xDomainValues.length - 1];
+    const span = lastSnapTime - firstSnapTime;
+    const offset = Math.max(span * 0.08, 2 * 60 * 60 * 1000);
+    const actualX = lastSnapTime + offset;
     markers.push({
       x: actualX,
       label: "Observed",
