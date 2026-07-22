@@ -146,6 +146,7 @@
   .legend-swatch { width: 14px; height: 2px; border-radius: 1px; }
   .legend-swatch.dashed { width: 14px; height: 0; background: none; border-top: 2px dashed; border-radius: 0; }
   .legend-swatch.dotted { width: 14px; height: 0; background: none; border-top: 2px dotted; border-radius: 0; }
+  .legend-swatch-svg { flex-shrink: 0; }
 
   .chart-wrap { position: relative; }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
@@ -247,18 +248,30 @@
         Solid lines are today's forecast for every date in the period above. Dashed lines are what BBC
         predicted the very first time each date appeared. Dotted lines are the most extreme prediction
         BBC has ever given in the "expected" direction for that date &mdash; the hottest "high" it ever
-        showed, the coldest "low" it ever showed. The shaded band spans the <em>full</em> range ever
-        predicted for that date, both directions &mdash; so even a dip in the high, or a spike in the
-        low, that later reverted stays visible, not just the extreme and today's number. Hover a date
-        for the exact figures, including the opposite extreme the lines don't show.
+        showed, the coldest "low" it ever showed. Dash-dot lines are the opposite extreme &mdash; a dip
+        in the high, or a spike in the low, that later reverted. The shaded band spans the distance
+        between the two, so the biggest swings stand out at a glance no matter which date they're on
+        or how far out. Hover a date for exact figures and when each extreme was seen.
       </p>
       <div class="legend">
         <span class="legend-item"><span class="legend-swatch" style="background:var(--series-high)"></span>Current high</span>
         <span class="legend-item"><span class="legend-swatch dashed" style="border-color:var(--series-high)"></span>First-seen high</span>
         <span class="legend-item"><span class="legend-swatch dotted" style="border-color:var(--series-high)"></span>Highest-ever high</span>
+        <span class="legend-item">
+          <svg class="legend-swatch-svg" width="14" height="2" viewBox="0 0 14 2" aria-hidden="true">
+            <line x1="0" y1="1" x2="14" y2="1" style="stroke:var(--series-high)" stroke-width="2" stroke-dasharray="6,3,1,3" />
+          </svg>
+          Lowest-ever high
+        </span>
         <span class="legend-item"><span class="legend-swatch" style="background:var(--series-low)"></span>Current low</span>
         <span class="legend-item"><span class="legend-swatch dashed" style="border-color:var(--series-low)"></span>First-seen low</span>
         <span class="legend-item"><span class="legend-swatch dotted" style="border-color:var(--series-low)"></span>Lowest-ever low</span>
+        <span class="legend-item">
+          <svg class="legend-swatch-svg" width="14" height="2" viewBox="0 0 14 2" aria-hidden="true">
+            <line x1="0" y1="1" x2="14" y2="1" style="stroke:var(--series-low)" stroke-width="2" stroke-dasharray="6,3,1,3" />
+          </svg>
+          Highest-ever low
+        </span>
       </div>
       <div class="chart-wrap" id="outlook-chart-wrap"></div>
       <div class="hidden table-scroll" id="outlook-table-wrap"></div>

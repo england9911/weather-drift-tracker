@@ -87,6 +87,21 @@ function addDiamondMarker(svg, x, y, color, r) {
   return path;
 }
 
+function addSquareMarker(svg, x, y, color, r) {
+  const surface = cssVar("--surface-1");
+  const rect = document.createElementNS(SVG_NS, "rect");
+  rect.setAttribute("x", x - r);
+  rect.setAttribute("y", y - r);
+  rect.setAttribute("width", r * 2);
+  rect.setAttribute("height", r * 2);
+  rect.setAttribute("fill", surface);
+  rect.setAttribute("stroke", color);
+  rect.setAttribute("stroke-width", 2.5);
+  rect.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(rect);
+  return rect;
+}
+
 function addRingMarker(svg, x, y, color, r) {
   const surface = cssVar("--surface-1");
   const ring = document.createElementNS(SVG_NS, "circle");
@@ -487,6 +502,7 @@ function renderOutlookChart(dates, range) {
     path.setAttribute("stroke-linecap", "round");
     if (style === "dashed") path.setAttribute("stroke-dasharray", "5,4");
     if (style === "dotted") path.setAttribute("stroke-dasharray", "0.1,5");
+    if (style === "dashdot") path.setAttribute("stroke-dasharray", "6,3,1,3");
     svg.appendChild(path);
   }
 
@@ -494,6 +510,8 @@ function renderOutlookChart(dates, range) {
   addSeriesLine((r) => r.firstLow, lowColor, "dashed");
   addSeriesLine((r) => r.extremeHigh, highColor, "dotted");
   addSeriesLine((r) => r.extremeLow, lowColor, "dotted");
+  addSeriesLine((r) => r.lowestEverHigh, highColor, "dashdot");
+  addSeriesLine((r) => r.highestEverLow, lowColor, "dashdot");
   addSeriesLine((r) => r.currentHigh, highColor, "solid");
   addSeriesLine((r) => r.currentLow, lowColor, "solid");
 
@@ -504,6 +522,10 @@ function renderOutlookChart(dates, range) {
   rows.forEach((r, i) => {
     addDiamondMarker(svg, xPos(i), yScale(r.extremeHigh), highColor, 5);
     addDiamondMarker(svg, xPos(i), yScale(r.extremeLow), lowColor, 5);
+  });
+  rows.forEach((r, i) => {
+    addSquareMarker(svg, xPos(i), yScale(r.lowestEverHigh), highColor, 4);
+    addSquareMarker(svg, xPos(i), yScale(r.highestEverLow), lowColor, 4);
   });
   rows.forEach((r, i) => {
     addDot(svg, xPos(i), yScale(r.currentHigh), highColor, 4);
