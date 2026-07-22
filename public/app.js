@@ -361,11 +361,19 @@ function computeOutlookRows(dates, range) {
       const first = snaps[0];
       const current = snaps[snaps.length - 1];
 
+      // Track both ends of each series' history, not just the "expected" direction
+      // (hottest-ever high, coldest-ever low) — a temporary dip in the high or
+      // spike in the low that later reverted is otherwise lost entirely, even
+      // though it really happened.
       let highest = snaps[0];
       let lowest = snaps[0];
+      let lowestHigh = snaps[0];
+      let highestLow = snaps[0];
       for (const s of snaps) {
         if (s.maxTempC > highest.maxTempC) highest = s;
         if (s.minTempC < lowest.minTempC) lowest = s;
+        if (s.maxTempC < lowestHigh.maxTempC) lowestHigh = s;
+        if (s.minTempC > highestLow.minTempC) highestLow = s;
       }
 
       return {
@@ -382,6 +390,10 @@ function computeOutlookRows(dates, range) {
         extremeHighAt: highest.fetchedAt,
         extremeLow: lowest.minTempC,
         extremeLowAt: lowest.fetchedAt,
+        lowestEverHigh: lowestHigh.maxTempC,
+        lowestEverHighAt: lowestHigh.fetchedAt,
+        highestEverLow: highestLow.minTempC,
+        highestEverLowAt: highestLow.fetchedAt,
       };
     });
 }
@@ -409,7 +421,16 @@ function renderOutlookChart(dates, range) {
   const n = rows.length;
   const xPos = (i) => margin.left + (n === 1 ? plotW / 2 : (plotW * i) / (n - 1));
 
-  const allY = rows.flatMap((r) => [r.firstHigh, r.currentHigh, r.extremeHigh, r.firstLow, r.currentLow, r.extremeLow]);
+  const allY = rows.flatMap((r) => [
+    r.firstHigh,
+    r.currentHigh,
+    r.extremeHigh,
+    r.lowestEverHigh,
+    r.firstLow,
+    r.currentLow,
+    r.extremeLow,
+    r.highestEverLow,
+  ]);
   const yMinRaw = Math.min(...allY);
   const yMaxRaw = Math.max(...allY);
   const yPad = (yMaxRaw - yMinRaw) * 0.2 || 1;
@@ -431,8 +452,9 @@ function renderOutlookChart(dates, range) {
   addLine(svg, margin.left, margin.top + plotH, width - margin.right, margin.top + plotH, "axis-line");
   rows.forEach((r, i) => addText(svg, xPos(i), margin.top + plotH + 18, formatDayMonth(r.targetDate), "middle"));
 
-  // Band spans the historical extreme down to today's forecast (extreme always
-  // dominates current by construction), so band height = size of the gap.
+  // Band spans the full historical range ever predicted for that date (highest
+  // ever shown down to lowest ever shown), so a dip or spike that later reverted
+  // stays visible even though current/first-seen no longer reflect it.
   function bandPath(getA, getB) {
     const forward = rows.map((r, i) => `${i === 0 ? "M" : "L"}${xPos(i)},${yScale(getA(r))}`).join(" ");
     const backward = rows
@@ -451,8 +473,8 @@ function renderOutlookChart(dates, range) {
     svg.appendChild(path);
   }
 
-  addBand((r) => r.extremeHigh, (r) => r.currentHigh, highWash);
-  addBand((r) => r.extremeLow, (r) => r.currentLow, lowWash);
+  addBand((r) => r.extremeHigh, (r) => r.lowestEverHigh, highWash);
+  addBand((r) => r.extremeLow, (r) => r.highestEverLow, lowWash);
 
   function addSeriesLine(getValue, color, style) {
     const d = rows.map((r, i) => `${i === 0 ? "M" : "L"}${xPos(i)},${yScale(getValue(r))}`).join(" ");
@@ -531,10 +553,12 @@ function renderOutlookChart(dates, range) {
       { color: highColor, label: `Current high (${formatDateTime(r.currentHighAt)})`, value: r.currentHigh },
       { color: highColor, label: `First-seen high (${formatDateTime(r.firstHighAt)})`, value: r.firstHigh },
       { color: highColor, label: `Highest-ever high (${formatDateTime(r.extremeHighAt)})`, value: r.extremeHigh },
+      { color: highColor, label: `Lowest-ever high (${formatDateTime(r.lowestEverHighAt)})`, value: r.lowestEverHigh },
       { divider: true },
       { color: lowColor, label: `Current low (${formatDateTime(r.currentLowAt)})`, value: r.currentLow },
       { color: lowColor, label: `First-seen low (${formatDateTime(r.firstLowAt)})`, value: r.firstLow },
       { color: lowColor, label: `Lowest-ever low (${formatDateTime(r.extremeLowAt)})`, value: r.extremeLow },
+      { color: lowColor, label: `Highest-ever low (${formatDateTime(r.highestEverLowAt)})`, value: r.highestEverLow },
     ];
     showTooltip(tooltipEl, wrap, e.clientX, e.clientY, formatDayMonth(r.targetDate), tooltipRows, formatTemp);
   };
@@ -564,8 +588,8 @@ function renderOutlookChart(dates, range) {
   table.className = "data-table";
   const thead = document.createElement("thead");
   thead.innerHTML =
-    "<tr><th>Date</th><th>First high</th><th>Highest-ever high</th><th>Current high</th><th>&Delta; vs peak</th>" +
-    "<th>First low</th><th>Lowest-ever low</th><th>Current low</th><th>&Delta; vs trough</th></tr>";
+    "<tr><th>Date</th><th>First high</th><th>Highest-ever high</th><th>Lowest-ever high</th><th>Current high</th><th>&Delta; vs peak</th>" +
+    "<th>First low</th><th>Lowest-ever low</th><th>Highest-ever low</th><th>Current low</th><th>&Delta; vs trough</th></tr>";
   const tbody = document.createElement("tbody");
   for (const r of rows) {
     const tr = document.createElement("tr");
@@ -573,10 +597,12 @@ function renderOutlookChart(dates, range) {
       formatDayMonth(r.targetDate),
       formatTemp(r.firstHigh),
       formatTemp(r.extremeHigh),
+      formatTemp(r.lowestEverHigh),
       formatTemp(r.currentHigh),
       formatSignedTemp(r.currentHigh - r.extremeHigh),
       formatTemp(r.firstLow),
       formatTemp(r.extremeLow),
+      formatTemp(r.highestEverLow),
       formatTemp(r.currentLow),
       formatSignedTemp(r.currentLow - r.extremeLow),
     ];

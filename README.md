@@ -41,13 +41,15 @@ no framework) renders four views:
   too. "Warm bias by lead time" deliberately ignores this picker and always
   aggregates every resolved date, since that's a different question.
 - **Forecast outlook: current, first-seen & most extreme forecast** — every
-  date in the selected period in one chart, three reference points per
+  date in the selected period in one chart, three drawn reference points per
   temperature series: today's forecast (solid), the first-ever prediction
-  for that date (dashed), and the single most extreme prediction BBC has
-  *ever* given for it — hottest high, coldest low, regardless of when
-  (dotted). The shaded band spans from that extreme down to today's
-  forecast, so the tallest bands are the dates with the biggest swings.
-  This is a **summary** view — three sampled points, not the full story.
+  for that date (dashed), and the most extreme prediction BBC has *ever*
+  given in the "expected" direction — hottest high, coldest low, regardless
+  of when (dotted). The shaded band spans the **full** range ever predicted
+  in both directions, so a dip in the high (or a spike in the low) that
+  later reverted stays visible even though it has no line of its own — hover
+  a date, or use table view, for that opposite extreme's exact value. This
+  is a **summary** view — a handful of sampled points, not the full story.
 - **Shape of each day's revisions** — a compact table, one row per date in
   the selected period, each with a small sparkline of *every* snapshot
   recorded for that date. This exists because the summary chart above can't
